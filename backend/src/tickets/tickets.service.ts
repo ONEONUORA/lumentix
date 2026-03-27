@@ -1,6 +1,3 @@
-import * as qrcode from 'qrcode';
-import { TicketSigningService } from './ticket-signing.service';
-import { IssueTicketResponseDto } from './dto/issue-ticket-response.dto';
 import {
   BadRequestException,
   ForbiddenException,
@@ -15,6 +12,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
 import { TicketEntity } from './entities/ticket.entity';
+import { TicketSigningService } from './ticket-signing.service';
+import { IssueTicketResponseDto } from './dto/issue-ticket-response.dto';
 import { PaymentsService } from '../payments/payments.service';
 import { PaymentStatus } from '../payments/entities/payment.entity';
 import { StellarService } from '../stellar/stellar.service';
@@ -40,7 +39,6 @@ export class TicketsService {
   ) {}
 
   async findByEvent(eventId: string, requesterId: string, paginationDto: any) {
-    // Ownership check
     const event = await this.eventRepo.findOne({ where: { id: eventId } });
     if (!event) throw new NotFoundException('Event not found');
     if (event.organizerId !== requesterId) {
@@ -50,6 +48,7 @@ export class TicketsService {
       .createQueryBuilder('ticket')
       .where('ticket.eventId = :eventId', { eventId });
 
+    if (paginationDto?.status) {
     // Optional status filter
     if (paginationDto && paginationDto.status) {
       queryBuilder.andWhere('ticket.status = :status', {
@@ -61,7 +60,6 @@ export class TicketsService {
   }
 
   async getEventTicketSummary(eventId: string, requesterId: string) {
-    // Ownership check
     const event = await this.eventRepo.findOne({ where: { id: eventId } });
     if (!event) throw new NotFoundException('Event not found');
     if (event.organizerId !== requesterId) {
@@ -91,7 +89,6 @@ export class TicketsService {
   async findOne(id: string, requesterId: string): Promise<TicketEntity> {
     const ticket = await this.ticketRepo.findOne({ where: { id } });
     if (!ticket) throw new NotFoundException('Ticket not found');
-    // Role check: Only owner, admin, or organizer of event can access
     if (ticket.ownerId !== requesterId) {
       throw new ForbiddenException('You do not own this ticket.');
     }
@@ -133,6 +130,7 @@ export class TicketsService {
         ownerId: existing.ownerId,
         assetCode: existing.assetCode,
         status: existing.status,
+        transactionHash: existing.transactionHash as string,
         transactionHash: existing.transactionHash,
       };
     }
@@ -169,7 +167,9 @@ export class TicketsService {
     const qrPayload = JSON.stringify({ ticketId: saved.id, signature });
     const qrCodeDataUrl = await qrcode.toDataURL(qrPayload);
 
-    const user = await this.userRepo.findOne({ where: { id: payment.userId } });
+    const user = await this.userRepo.findOne({
+      where: { id: payment.userId },
+    });
     const event = await this.eventRepo.findOne({
       where: { id: payment.eventId },
     });
@@ -189,6 +189,7 @@ export class TicketsService {
       ownerId: saved.ownerId,
       assetCode: saved.assetCode,
       status: saved.status,
+      transactionHash: saved.transactionHash as string,
       transactionHash: saved.transactionHash,
     };
   }
